@@ -148,4 +148,7 @@ echo "waiting for ALB resources to bake"
 sleep 480 # 8 minutes
 
 albHostname="$(kubectl get ingress alb-ingress -n http-server -o=jsonpath="{.status.loadBalancer.ingress[0].hostname}")"
-echo albHostname http://$albHostname
+echo albUrl http://$albHostname
+
+approutingIp="$(kubectl get ingress approuting-ingress -n http-server -o=jsonpath="{.status.loadBalancer.ingress[0].ip}")"
+echo appRoutingUrl http://$approutingIp
