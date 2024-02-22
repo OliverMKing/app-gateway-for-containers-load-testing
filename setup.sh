@@ -15,6 +15,7 @@ az aks create \
     --resource-group $RESOURCE_GROUP \
     --name $CLUSTER_NAME \
     --node-vm-size $VM_SIZE \
+    --node-count 7 \
     --network-plugin azure \
     --enable-addons monitoring \
     --enable-oidc-issuer \
