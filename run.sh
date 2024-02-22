@@ -2,7 +2,7 @@
 set -e
 set -o xtrace
 
-RESOURCE_GROUP="kingoliver-agc-test"
+RESOURCE_GROUP="kingoliver-agc-test2"
 CLUSTER_NAME="kingoliver-agc-test"
 LOCATION="eastus"
 VM_SIZE="Standard_D8ds_v5"
@@ -45,8 +45,10 @@ principalId="$(az identity show -g $RESOURCE_GROUP -n $IDENTITY_RESOURCE_NAME --
 echo "Apply Contributor and AppGW For Containers Configuration Manager Role on the identity"
 resourceGroupId=$(az group show --name $RESOURCE_GROUP --query id -otsv)
 albSubnetId="$vnetId/subnets/$ALB_SUBNET_NAME"
+mcResourceGroupId=$(az group show --name $mcResourceGroup --query id -otsv)
 az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --scope $albSubnetId --role "4d97b98b-1d4f-4787-a291-c67834d212e7"
-az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --scope $resourceGroupId --role "fbc52c3f28ad4303a8928a056630b8f1"
+az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --scope $mcResourceGroupId --role "fbc52c3f28ad4303a8928a056630b8f1"
+az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --scope $mcResourceGroupId --role "acdd72a7-3385-48ef-bd42-f606fba81ae7" 
 
 echo "Setup federation with AKS OIDC issuer"
 AKS_OIDC_ISSUER="$(az aks show -n "$CLUSTER_NAME" -g "$RESOURCE_GROUP" --query "oidcIssuerProfile.issuerUrl" -o tsv)"
@@ -57,9 +59,10 @@ az identity federated-credential create --name $IDENTITY_RESOURCE_NAME \
     --subject "system:serviceaccount:azure-alb-system:alb-controller-sa"
 
 echo "Getting AKS kubeconfig"
-az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME
+az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --overwrite-existing 
 
 echo "Installing the ALB Ingress Controller"
+export HELM_EXPERIMENTAL_OCI=1
 helm upgrade \
     --install alb-controller oci://mcr.microsoft.com/application-lb/charts/alb-controller \
     --version 0.4.023971 \
@@ -88,3 +91,41 @@ spec:
   associations:
   - $albSubnetId
 EOF
+
+echo "Waiting for ApplicationLoadBalancer to be created"
+kubectl wait --for=condition=Deployment --timeout=3m ApplicationLoadBalancer alb -n alb-load-test
+
+echo "Creating HTTP Server"
+HTTP_SERVER_NAMESPACE="http-server"
+kubectl create namespace $HTTP_SERVER_NAMESPACE
+kubectl apply -f ./http_server.yaml -n $HTTP_SERVER_NAMESPACE
+
+echo "Creating Ingress"
+kubectl apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress
+  namespace: $HTTP_SERVER_NAMESPACE
+  annotations:
+    alb.networking.azure.io/alb-name: alb
+    alb.networking.azure.io/alb-namespace: $NAMESPACE
+spec:
+  ingressClassName: azure-alb-external
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: http-server
+                port:
+                  number: 80
+EOF
+
+echo "waiting for ALB resources to bake"
+sleep 480 # 8 minutes
+
+hostname="$(k get ingress ingress -n http-server -o=jsonpath="{.status.loadBalancer.ingress[0].hostname}")"
+echo $hostname
