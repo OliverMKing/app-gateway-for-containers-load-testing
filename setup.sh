@@ -19,8 +19,8 @@ az aks create \
     --enable-addons monitoring \
     --enable-oidc-issuer \
     --enable-workload-identity \
-    --generate-ssh-key
-
+    --generate-ssh-key \
+    --enable-app-routing
 
 mcResourceGroup=$(az aks show --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --query "nodeResourceGroup" -o tsv)
 clusterSubnetId=$(az vmss list --resource-group $mcResourceGroup --query '[0].virtualMachineProfile.networkProfile.networkInterfaceConfigurations[0].ipConfigurations[0].subnet.id' -o tsv)
@@ -105,7 +105,7 @@ kubectl apply -f - <<EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: ingress
+  name: alb-ingress
   namespace: $HTTP_SERVER_NAMESPACE
   annotations:
     alb.networking.azure.io/alb-name: alb
@@ -124,8 +124,28 @@ spec:
                   number: 80
 EOF
 
+kubectl apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: approuting-ingress
+  namespace: $HTTP_SERVER_NAMESPACE
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: http-server
+                port:
+                  number: 80
+EOF
+
 echo "waiting for ALB resources to bake"
 sleep 480 # 8 minutes
 
-hostname="$(kubectl get ingress ingress -n http-server -o=jsonpath="{.status.loadBalancer.ingress[0].hostname}")"
-echo $hostname
+albHostname="$(kubectl get ingress alb-ingress -n http-server -o=jsonpath="{.status.loadBalancer.ingress[0].hostname}")"
+echo albHostname http://$albHostname
