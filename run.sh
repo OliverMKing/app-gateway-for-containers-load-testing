@@ -2,7 +2,7 @@
 set -e
 set -o xtrace
 
-RESOURCE_GROUP="kingoliver-agc-test2"
+RESOURCE_GROUP="kingoliver-agc-test"
 CLUSTER_NAME="kingoliver-agc-test"
 LOCATION="eastus"
 VM_SIZE="Standard_D8ds_v5"
@@ -127,5 +127,5 @@ EOF
 echo "waiting for ALB resources to bake"
 sleep 480 # 8 minutes
 
-hostname="$(k get ingress ingress -n http-server -o=jsonpath="{.status.loadBalancer.ingress[0].hostname}")"
+hostname="$(kubectl get ingress ingress -n http-server -o=jsonpath="{.status.loadBalancer.ingress[0].hostname}")"
 echo $hostname
