@@ -4,35 +4,25 @@ set -o xtrace
 
 RESOURCE_GROUP="kingoliver-agc-test6"
 CLUSTER_NAME="kingoliver-agc-test"
-ACR_NAME="kingoliveragctestsix"
-LOCATION="westus"
+ACR_NAME="kingoliveragctest"
+LOCATION="uksouth"
 VM_SIZE="Standard_D8ds_v5"
-HTTP_SERVER_IMAGE="http-server:latest"
 
 echo "Creating resource group $RESOURCE_GROUP in $LOCATION"
 az group create --name $RESOURCE_GROUP --location $LOCATION
-
-echo "Creating ACR $ACR_NAME in $RESOURCE_GROUP"
-az acr create -n $ACR_NAME -g $RESOURCE_GROUP --sku basic
-ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query "loginServer" --output tsv)
-
-echo "Building and pushing the http server image to ACR"
-az acr build --registry $ACR_NAME --image $HTTP_SERVER_IMAGE ./server
-HTTP_SERVER_FULL_IMAGE="$ACR_LOGIN_SERVER/$HTTP_SERVER_IMAGE"
 
 echo "Creating AKS cluster $CLUSTER_NAME in $RESOURCE_GROUP"
 az aks create \
     --resource-group $RESOURCE_GROUP \
     --name $CLUSTER_NAME \
     --node-vm-size $VM_SIZE \
-    --node-count 6 \
+    --node-count 12 \
     --network-plugin azure \
     --enable-addons monitoring \
     --enable-oidc-issuer \
     --enable-workload-identity \
     --generate-ssh-key \
     --enable-app-routing \
-    --attach-acr $ACR_NAME
 
 mcResourceGroup=$(az aks show --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --query "nodeResourceGroup" -o tsv)
 clusterSubnetId=$(az vmss list --resource-group $mcResourceGroup --query '[0].virtualMachineProfile.networkProfile.networkInterfaceConfigurations[0].ipConfigurations[0].subnet.id' -o tsv)
@@ -118,7 +108,7 @@ metadata:
   name: http-server
   namespace: $HTTP_SERVER_NAMESPACE
 spec:
-  replicas: 15
+  replicas: 100
   selector:
     matchLabels:
       app: http-server
@@ -129,17 +119,20 @@ spec:
     spec:
       containers:
         - name: http-server
-          image: $HTTP_SERVER_FULL_IMAGE
+          image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
           ports:
             - name: http-port
-              containerPort: 8080
+              containerPort: 80
+          env:
+          - name: TITLE
+            value: "Welcome to Azure Kubernetes Service (AKS)"
           resources:
             limits:
-              cpu: 250m
-              memory: 100Mi
+              cpu: 500m
+              memory: 500Mi
             requests:
-              cpu: 250m
-              memory: 100Mi
+              cpu: 500m
+              memory: 500Mi
 EOF
 kubectl apply -f - <<EOF
 apiVersion: v1
